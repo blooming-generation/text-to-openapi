@@ -2,37 +2,37 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A simple Node.js service that uses AI to generate an OpenAPI Specification (OAS) in JSON format based on a natural language request about a specific API endpoint.
+A Node.js service using AI to generate an OpenAPI Specification (OAS) fragment for a *single* API operation based on a natural language request.
 
 ## Overview
 
-You provide a natural language query like "I want to list my Stripe refunds", and the service uses a combination of:
+You provide a natural language query describing one or more API operations (e.g., "Generate an OpenAPI spec for the Stripe Refund API, including operations for creating and retrieving refunds"). The service currently focuses on the **first operation identified** ("Create a refund" in the example) and uses a multi-step AI process:
 
-*   **Google Gemini 1.5 Pro:** As the primary Large Language Model (LLM).
-*   **Vercel AI SDK:** To orchestrate the LLM interaction and tool usage.
-*   **SerpAPI:** For searching Google for relevant API documentation URLs.
-*   **Firecrawl:** For scraping the content of documentation webpages.
-*   **Swagger Parser:** For validating the generated OAS.
-*   **Internal Evaluator Agents (using Gemini):**
-    *   An "Alignment Evaluator" to ensure the OAS strictly matches the user's specific request.
-    *   A "Veracity Evaluator" to check the generated OAS details against live documentation using the search/scrape tools.
+1.  **Intent Check & Decomposition (Claude 3.5 Haiku):** Verifies the request is for an API spec and breaks it down into distinct operations. Selects the first operation for processing.
+2.  **Information Gathering (Claude 3.7 Sonnet + Tools):**
+    *   Uses `search_api_documentation` (SerpAPI) to find relevant documentation URLs for the target operation.
+    *   Uses `read_webpage_content` (Firecrawl) to scrape the content of those pages.
+    *   Summarizes the gathered factual information (method, path, params, responses) into a text block.
+3.  **JSON Generation (Claude 3.7 Sonnet):**
+    *   Takes the text summary from the previous step.
+    *   Uses `generateObject` with a defined OAS schema to structure the information into a valid OAS JSON fragment for the single operation.
+4.  **(Optional) Iterative Validation (Self-Correction - *Currently Disabled*):** *Previous iterations involved a step where the model used a `validate_openapi_schema` tool (Swagger Parser) to validate and potentially correct its own JSON output iteratively. This has been replaced by the direct `generateObject` approach in step 3.*
 
-The service performs an iterative process involving searching, reading, generating, validating, and evaluating until a valid, aligned, and verified OAS (in JSON format) matching the request is produced, or it determines it cannot fulfill the request accurately.
+The final result is a single OAS JSON fragment representing the first identified operation.
 
 ## Features
 
-*   Natural language input to generate specific OpenAPI endpoint definitions.
-*   Multi-tool agent architecture (search, scrape, validate, evaluate).
-*   Iterative refinement process for improved accuracy and relevance.
-*   Alignment and Veracity checks using dedicated LLM evaluations.
-*   JSON-only OpenAPI 3.x output.
+*   Natural language input to generate specific OpenAPI operation definitions.
+*   Multi-step, multi-model agent architecture (Anthropic models, Search, Scrape).
+*   Focuses on generating a spec for the first identified API operation in a query.
+*   JSON-only OpenAPI 3.x output fragment.
 
 ## Prerequisites
 
-*   Node.js (v18.11+ recommended for `pnpm dev` watch mode)
+*   Node.js (v18.11+ recommended)
 *   pnpm package manager (or npm/yarn, adjust commands accordingly)
 *   API Keys:
-    *   Google Gemini API Key (from [Google AI Studio](https://aistudio.google.com/) or Google Cloud)
+    *   Anthropic API Key (from [anthropic.com](https://console.anthropic.com/))
     *   SerpAPI API Key (from [serpapi.com](https://serpapi.com/))
     *   Firecrawl API Key (from [firecrawl.dev](https://firecrawl.dev/))
 
@@ -56,17 +56,20 @@ The service performs an iterative process involving searching, reading, generati
         ```
     *   Edit the `.env` file and add your API keys:
         ```dotenv
-        GEMINI_API_KEY=YOUR_GEMINI_API_KEY
+        # Required
+        ANTHROPIC_API_KEY=YOUR_ANTHROPIC_API_KEY
         SERPAPI_API_KEY=YOUR_SERPAPI_API_KEY
         FIRECRAWL_API_KEY=YOUR_FIRECRAWL_API_KEY
-        # Optional: PORT=3001
+
+        # Optional - Defaults to 3000
+        # PORT=3001
         ```
 
 ## Running the Service
 
 1.  **Build the TypeScript code:**
     ```bash
-    pnpm build
+    pnpm run clean && pnpm run build
     ```
 
 2.  **Start the server:**
@@ -76,9 +79,9 @@ The service performs an iterative process involving searching, reading, generati
     The server will start, typically on port 3000 (or the port specified in `.env`).
 
 3.  **Development Mode (Optional):**
-    For development, you can use the `dev` script which watches for file changes, recompiles, and restarts the server:
+    Watches for changes, recompiles, and restarts the server:
     ```bash
-    pnpm dev
+    pnpm run dev
     ```
 
 ## API Usage
@@ -93,67 +96,61 @@ Send a `POST` request to the `/api/generate-openapi` endpoint with a JSON body c
 *   **Body:**
     ```json
     {
-      "query": "Give me the OpenAPI spec for listing Stripe refunds"
+      "query": "Generate an OpenAPI spec for the Stripe Refund API, including operations for creating and retrieving refunds."
     }
     ```
 
 **Success Response (200 OK):**
 
-The response body will contain the generated OpenAPI specification in JSON format if successful.
+The response body contains the generated OAS fragment for the *first* operation identified in the query.
 
 ```json
 {
-  "openapi": "3.0.0",
-  "info": {
-    "title": "Stripe API - List Refunds",
-    "version": "1.0.0"
-  },
-  "paths": {
-    "/v1/refunds": {
-      "get": {
-        "summary": "List all refunds",
-        "operationId": "getListRefunds",
-        "parameters": [
-          // ... parameters like limit, starting_after, etc. ...
-        ],
-        "responses": {
-          "200": {
-            "description": "A list of refunds.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  // ... schema definition ...
-                }
-              }
-            }
-          }
+  "generated_spec": {
+    "openapi": "3.0.0",
+    "info": {
+      "title": "Stripe API",
+      "version": "1.0.0",
+      "description": "API for Stripe payment processing"
+    },
+    "paths": {
+      "/v1/refunds": {
+        "post": {
+          "summary": "Create a Stripe refund",
+          // ... rest of the generated operation spec ...
         }
       }
     }
+    // ... potentially components etc. ...
   }
 }
 ```
 
 **Empty Response (200 OK):**
 
-If the initial intent check determines the query is not asking for an OpenAPI spec, an empty JSON object `{}` is returned.
+If the initial intent check determines the query is not asking for an API spec, an empty JSON object `{}` is returned.
 
 **Error Response (4xx or 5xx):**
 
-If an error occurs (e.g., missing query, server configuration error, failure to generate OAS after retries), the response will contain an error message.
+If an error occurs (e.g., missing query, setup error, failure in generation steps), the response contains an error message.
 
 ```json
 {
-  "error": "Failed to generate OpenAPI specification after multiple attempts.",
-  "details": "ERROR: Could not generate valid and verified OAS."
+  "error": "Failed to generate OpenAPI specification for operation: Create a refund",
+  "details": "JSON Generation Failed: JSON generation step produced an empty object '{}'."
+}
+```
+```json
+{
+  "error": "Could not understand the specific API operations requested in the query."
 }
 ```
 
 ## Known Issues & Considerations
 
-*   **`readWebpageContent.ts`:** This tool currently accesses scraped content via `.data.content` due to persistent linter errors with the `@mendable/firecrawl-js@1.24.0` types. This assumes HTML output. If Markdown is strictly needed or runtime errors occur, this tool may need revisiting based on updated library documentation.
-*   **Vercel AI SDK Type Conflicts:** `@ts-ignore` comments are used in `src/tools/evaluate*.ts` and `src/index.ts` for Vercel AI SDK `google` provider imports/usage and the `maxToolRoundtrips` parameter where current type definitions seem to conflict with documented functionality. These might need adjustment based on future SDK updates.
-*   **Prompt Sensitivity:** The quality of the generated OAS heavily depends on the quality of the online documentation found and the effectiveness of the internal LLM prompts. Prompts may require tuning for complex APIs or poorly structured documentation.
+*   **Single Operation Focus:** Currently only processes the first operation identified in the decomposition step.
+*   **Tool Reliability:** Depends heavily on the quality and accessibility of online documentation found by search and scraped by Firecrawl. Poorly structured or heavily Javascript-rendered sites may yield poor results.
+*   **Model Limitations:** The final structuring step relies on the LLM's ability to interpret the gathered text and map it to the OAS schema. Complex information might still lead to errors or incomplete specs.
 
 ## License
 
