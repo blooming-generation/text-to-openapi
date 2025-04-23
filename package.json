@@ -4,6 +4,7 @@
   "description": "",
   "main": "dist/index.js",
   "scripts": {
+    "clean": "rm -rf dist",
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsc -w & node --watch dist/index.js",
@@ -19,6 +20,7 @@
     "typescript": "^5.8.3"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^1.2.10",
     "@mendable/firecrawl-js": "^1.24.0",
     "ai": "^4.3.9",
     "dotenv": "^16.5.0",

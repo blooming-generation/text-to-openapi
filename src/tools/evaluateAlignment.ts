@@ -1,6 +1,7 @@
 import { generateText } from 'ai';
-// @ts-ignore - Assuming 'ai/google' is the correct path despite potential lint errors
-import { google } from 'ai/google';
+// Remove or keep Google import based on whether it's needed elsewhere
+// import { google } from '@ai-sdk/google'; 
+import { anthropic } from '@ai-sdk/anthropic'; // Add Anthropic import
 
 // Define the structure for the alignment evaluation result
 interface AlignmentResult {
@@ -10,12 +11,12 @@ interface AlignmentResult {
 
 /**
  * Evaluates the alignment between a user query and a generated OpenAPI Specification (OAS).
- * Uses an internal LLM call (Gemini) configured as an 'Alignment Evaluator'.
+ * Uses an internal LLM call (Claude Haiku) configured as an 'Alignment Evaluator'.
  *
  * @param userQuery - The original user query.
  * @param generatedOAS - The generated OpenAPI specification (as a JSON string or object).
  * @returns A promise that resolves to an AlignmentResult object.
- * @throws Throws an error if the GEMINI_API_KEY is missing or if the evaluation fails.
+ * @throws Throws an error if the evaluation fails (API key check handled by provider).
  */
 export async function evaluateAlignment(
     userQuery: string,
@@ -23,16 +24,14 @@ export async function evaluateAlignment(
 ): Promise<AlignmentResult> {
     console.log("[Tool: evaluateAlignment] Evaluating alignment for query:", userQuery);
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-        throw new Error("GEMINI_API_KEY environment variable is not set for alignment evaluation.");
-    }
-
     // Ensure OAS is stringified for the prompt
     const oasString = typeof generatedOAS === 'string' ? generatedOAS : JSON.stringify(generatedOAS, null, 2);
 
+    // Log the OAS string being sent to the evaluator
+    console.log("[Tool: evaluateAlignment] OAS being evaluated:\n", oasString); 
+
     // Define the system prompt for the Alignment Evaluator LLM
-    const systemPrompt = `You are an Alignment Evaluator. Your task is to assess if the provided OpenAPI Specification (OAS) strictly and accurately represents *only* the specific functionality requested by the user query. Ignore any extra endpoints, operations, or details in the OAS that were not directly asked for in the query. Output ONLY a single floating-point number between 0.0 and 5.0 representing the alignment score. A score of 5.0 means perfect alignment with the specific request, while 0.0 means no alignment.`;
+    const systemPrompt = `You are an Alignment Evaluator. Your task is to assess if the provided OpenAPI Specification (OAS) strictly and accurately represents *only* the specific functionality requested by the user query. Look for any extra or missing endpoints, operations, or details in the OAS. Output ONLY a single floating-point number between 0.0 and 5.0 representing the alignment score. A score of 5.0 means perfect alignment with the specific request, while 0.0 means no alignment.`;
 
     // Define the user prompt containing the query and the OAS
     const userPrompt = `User Query: "${userQuery}"\n\nGenerated OAS:\n\`\`\`json\n${oasString}\n\`\`\`\n\nAlignment Score (0.0-5.0):`;
@@ -40,13 +39,15 @@ export async function evaluateAlignment(
     try {
         // Make the internal LLM call using Vercel AI SDK's generateText
         const { text } = await generateText({
-            // @ts-ignore - Assuming model usage is correct despite potential lint errors
-            model: google('models/gemini-1.5-pro-latest'), // Use appropriate Gemini model
+            // Switch to Claude Haiku
+            model: anthropic('claude-3-5-haiku-latest'),
             system: systemPrompt,
             prompt: userPrompt,
-            temperature: 0.1, // Low temperature for deterministic score output
-            maxTokens: 10, // Score is short
+            temperature: 0.1,
         });
+
+        // Log the raw text output from the evaluator LLM
+        console.log("[Tool: evaluateAlignment] Raw LLM text response:", JSON.stringify(text)); // Stringify raw text
 
         // Parse the score from the response text
         const score = parseFloat(text.trim());
